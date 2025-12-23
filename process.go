@@ -19,6 +19,11 @@ type Process struct {
 	// Snapshot state
 	RecordedResources  map[int]*ResourceLock
 	RecordedWaitingFor map[string]bool
+
+	// Marker state
+	HasRecordedState        bool
+	MarkerReceived          map[string]bool
+	RecordedChannelMessages map[string][]Message
 }
 
 func NewProcess(id string, resources []int) *Process {
@@ -31,11 +36,13 @@ func NewProcess(id string, resources []int) *Process {
 	}
 
 	return &Process{
-		ID:         id,
-		Resources:  owned,
-		Inbound:    make(map[string]<-chan Message),
-		Outbound:   make(map[string]chan<- Message),
-		WaitingFor: make(map[string]bool),
+		ID:                      id,
+		Resources:               owned,
+		Inbound:                 make(map[string]<-chan Message),
+		Outbound:                make(map[string]chan<- Message),
+		WaitingFor:              make(map[string]bool),
+		MarkerReceived:          make(map[string]bool),
+		RecordedChannelMessages: make(map[string][]Message),
 	}
 }
 
@@ -98,13 +105,20 @@ func (p *Process) RequestLock(resourceID int, ownerID string) {
 }
 
 func (p *Process) handleMessage(msg Message) {
+	if msg.Type == Marker {
+		p.handleMarker(msg)
+		return
+	}
+
+	if p.HasRecordedState && !p.MarkerReceived[msg.From] {
+		p.RecordedChannelMessages[msg.From] = append(p.RecordedChannelMessages[msg.From], msg)
+	}
+
 	switch msg.Type {
 	case RequestLock:
 		p.handleRequestLock(msg)
 	case GrantLock:
 		p.handleGrantLock(msg)
-	case Marker:
-		fmt.Printf("process %s received marker from %s\n", p.ID, msg.From)
 	default:
 		fmt.Printf("process %s received unknown message type %q from %s\n", p.ID, msg.Type, msg.From)
 	}
@@ -155,6 +169,13 @@ func (p *Process) sendGrant(to string, resourceID int) {
 	}
 }
 
+func (p *Process) handleMarker(msg Message) {
+	if !p.HasRecordedState {
+		p.RecordState()
+	}
+	p.MarkerReceived[msg.From] = true
+}
+
 func (p *Process) RecordState() {
 	p.RecordedResources = make(map[int]*ResourceLock, len(p.Resources))
 	for id, lock := range p.Resources {
@@ -170,6 +191,7 @@ func (p *Process) RecordState() {
 		p.RecordedWaitingFor[pid] = waiting
 	}
 
+	p.HasRecordedState = true
 	for to, ch := range p.Outbound {
 		ch <- Message{
 			From: p.ID,

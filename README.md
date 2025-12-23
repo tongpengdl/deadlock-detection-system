@@ -32,3 +32,14 @@ go build .
 - **Marker Propagation:**
   - Upon recording its own state, the process immediately sends a `MARKER` message on all outgoing channels.
   - This ensures the snapshot wavefront propagates to other processes before any subsequent application messages.
+
+## Milestone 2.3: Marker Receiving Rule
+- **Handling First Marker:**
+  - If a process receives a `MARKER` for the first time:
+    - It immediately records its own state (resources and wait-for status).
+    - It marks the channel the marker arrived on as "Empty" (part of the global state).
+    - It propagates the `MARKER` to all its outgoing neighbors.
+- **Handling Duplicate Markers:**
+  - If a process has already recorded its state and receives another `MARKER` from a different channel:
+    - It stops recording messages on that specific channel.
+    - The messages received on that channel *after* the state recording but *before* this duplicate marker are saved as the "Channel State."
