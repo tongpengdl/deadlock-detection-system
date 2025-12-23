@@ -9,11 +9,16 @@ type ResourceLock struct {
 }
 
 type Process struct {
-	ID        string
-	Resources map[int]*ResourceLock
-	Inbound   map[string]<-chan Message
-	Outbound  map[string]chan<- Message
-	inbox     chan Message
+	ID         string
+	Resources  map[int]*ResourceLock
+	Inbound    map[string]<-chan Message
+	Outbound   map[string]chan<- Message
+	inbox      chan Message
+	WaitingFor map[string]bool
+
+	// Snapshot state
+	RecordedResources  map[int]*ResourceLock
+	RecordedWaitingFor map[string]bool
 }
 
 func NewProcess(id string, resources []int) *Process {
@@ -26,10 +31,11 @@ func NewProcess(id string, resources []int) *Process {
 	}
 
 	return &Process{
-		ID:        id,
-		Resources: owned,
-		Inbound:   make(map[string]<-chan Message),
-		Outbound:  make(map[string]chan<- Message),
+		ID:         id,
+		Resources:  owned,
+		Inbound:    make(map[string]<-chan Message),
+		Outbound:   make(map[string]chan<- Message),
+		WaitingFor: make(map[string]bool),
 	}
 }
 
@@ -87,6 +93,7 @@ func (p *Process) RequestLock(resourceID int, ownerID string) {
 		ResourceID: resourceID,
 	}
 	ch <- msg
+	p.WaitingFor[ownerID] = true
 	fmt.Printf("process %s requesting resource %d from %s\n", p.ID, resourceID, ownerID)
 }
 
@@ -128,7 +135,9 @@ func (p *Process) handleRequestLock(msg Message) {
 }
 
 func (p *Process) handleGrantLock(msg Message) {
+	delete(p.WaitingFor, msg.From)
 	fmt.Printf("process %s received grant for resource %d from %s\n", p.ID, msg.ResourceID, msg.From)
+
 }
 
 func (p *Process) sendGrant(to string, resourceID int) {
@@ -143,5 +152,21 @@ func (p *Process) sendGrant(to string, resourceID int) {
 		To:         to,
 		Type:       GrantLock,
 		ResourceID: resourceID,
+	}
+}
+
+func (p *Process) RecordState() {
+	p.RecordedResources = make(map[int]*ResourceLock, len(p.Resources))
+	for id, lock := range p.Resources {
+		p.RecordedResources[id] = &ResourceLock{
+			ID:     lock.ID,
+			Holder: lock.Holder,
+			Queue:  lock.Queue,
+		}
+	}
+
+	p.RecordedWaitingFor = make(map[string]bool, len(p.WaitingFor))
+	for pid, waiting := range p.WaitingFor {
+		p.RecordedWaitingFor[pid] = waiting
 	}
 }

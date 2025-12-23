@@ -17,3 +17,12 @@ go build .
 - Processes request resources they do not own.
 - Owners grant if free; otherwise they queue the request.
 - Run three processes (A, B, C) with resources 1, 2, 3 to observe deadlock.
+
+## Milestone 2.1: The Marker & Internal State
+- **State Recording:**
+  - `RecordState()` saves the current local snapshot:
+    - **Held Resources:** Which resource IDs this process owns, who holds them, and the wait queue.
+    - **Waiting For:** Which processes we are currently waiting on for a resource grant.
+- **The Marker:**
+  - Introduced the `MARKER` message type.
+  - Markers are distinct from lock requests and are processed separately to coordinate the distributed snapshot.
