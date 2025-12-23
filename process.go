@@ -169,4 +169,12 @@ func (p *Process) RecordState() {
 	for pid, waiting := range p.WaitingFor {
 		p.RecordedWaitingFor[pid] = waiting
 	}
+
+	for to, ch := range p.Outbound {
+		ch <- Message{
+			From: p.ID,
+			To:   to,
+			Type: Marker,
+		}
+	}
 }

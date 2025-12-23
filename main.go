@@ -25,4 +25,10 @@ func main() {
 
 	time.Sleep(500 * time.Millisecond)
 	fmt.Println("deadlock likely: each process holds one resource and waits on another")
+
+	fmt.Println("--- Initiating Snapshot from Process A ---")
+	a.RecordState()
+
+	// Allow time for snapshot messages to propagate
+	time.Sleep(1 * time.Second)
 }

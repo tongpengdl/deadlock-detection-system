@@ -26,3 +26,9 @@ go build .
 - **The Marker:**
   - Introduced the `MARKER` message type.
   - Markers are distinct from lock requests and are processed separately to coordinate the distributed snapshot.
+
+## Milestone 2.2: Marker Sending Rule (Initiator)
+- **Initiator Logic:** A selected process (e.g., Process A) can trigger the snapshot.
+- **Marker Propagation:**
+  - Upon recording its own state, the process immediately sends a `MARKER` message on all outgoing channels.
+  - This ensures the snapshot wavefront propagates to other processes before any subsequent application messages.
