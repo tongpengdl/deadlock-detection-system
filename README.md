@@ -1,45 +1,62 @@
-# deadlock-detection-system
+# Deadlock Detection System
 
-Prototype of a deadlock detection system inspired by Chandy-Lamport snapshots.
+This project implements a distributed deadlock detection system using the **Chandy-Lamport Snapshot Algorithm**. It simulates a set of concurrent processes managing resources and detects if they have entered a deadlocked state.
 
-## Build and run
+## How it Works
+
+The system consists of three main components:
+
+1.  **Processes**: Independent entities that own resources and can request resources from others. They communicate via message passing (Go channels).
+2.  **Snapshot Algorithm (Chandy-Lamport)**: A mechanism to capture a consistent global state of the distributed system (processes + communication channels) without freezing the application.
+3.  **Snapshot Server (The Detector)**: A centralized observer that collects local snapshots from all processes, constructs a **Wait-For Graph (WFG)**, and analyzes it for cycles.
+
+## Simulation Logic (`main.go`)
+
+The `main.go` file orchestrates a classic circular deadlock scenario to demonstrate the detection capability:
+
+1.  **Initialization**:
+    *   A `SnapshotServer` is started to listen for reports.
+    *   Three processes are created:
+        *   **Process A** (owns Resource 1)
+        *   **Process B** (owns Resource 2)
+        *   **Process C** (owns Resource 3)
+    *   Processes are fully connected with bidirectional channels.
+
+2.  **Deadlock Creation**:
+    *   **A** requests Resource 2 (held by **B**).
+    *   **B** requests Resource 3 (held by **C**).
+    *   **C** requests Resource 1 (held by **A**).
+    *   This establishes a circular dependency: `A -> B -> C -> A`. Since no process releases its resource, the system hangs.
+
+3.  **Detection**:
+    *   **Process A** initiates the Chandy-Lamport snapshot by recording its state and flooding `MARKER` messages.
+    *   As markers propagate, every process records its local state (who it is waiting for) and the state of its incoming channels (messages in transit).
+    *   Once a process has received markers on all input links, it sends a `SnapshotReport` to the central server.
+
+4.  **Analysis**:
+    *   The **Snapshot Server** aggregates all reports.
+    *   It builds a global **Wait-For Graph (WFG)**. Edges represent dependencies found in:
+        *   **Process State**: Explicitly waiting for a grant.
+        *   **Channel State**: Request messages that were "on the wire" during the snapshot.
+    *   A Depth-First Search (DFS) runs on the WFG. If a cycle is found, it confirms the deadlock.
+
+## Build and Run
+
 ```bash
 go build .
 ./deadlock-detection-system
 ```
 
-## Milestone 1.1: Process & messages
-- `Process` has an ID, owned resources, and per-link inbound/outbound channels.
-- Messages carry a type (`REQUEST_LOCK`, `GRANT_LOCK`, `MARKER`) and resource ID.
-- Each directed link has its own buffered Go channel (no global channel).
+### Expected Output
 
-## Milestone 1.2: Grasping logic
-- Processes request resources they do not own.
-- Owners grant if free; otherwise they queue the request.
-- Run three processes (A, B, C) with resources 1, 2, 3 to observe deadlock.
-
-## Milestone 2.1: The Marker & Internal State
-- **State Recording:**
-  - `RecordState()` saves the current local snapshot:
-    - **Held Resources:** Which resource IDs this process owns, who holds them, and the wait queue.
-    - **Waiting For:** Which processes we are currently waiting on for a resource grant.
-- **The Marker:**
-  - Introduced the `MARKER` message type.
-  - Markers are distinct from lock requests and are processed separately to coordinate the distributed snapshot.
-
-## Milestone 2.2: Marker Sending Rule (Initiator)
-- **Initiator Logic:** A selected process (e.g., Process A) can trigger the snapshot.
-- **Marker Propagation:**
-  - Upon recording its own state, the process immediately sends a `MARKER` message on all outgoing channels.
-  - This ensures the snapshot wavefront propagates to other processes before any subsequent application messages.
-
-## Milestone 2.3: Marker Receiving Rule
-- **Handling First Marker:**
-  - If a process receives a `MARKER` for the first time:
-    - It immediately records its own state (resources and wait-for status).
-    - It marks the channel the marker arrived on as "Empty" (part of the global state).
-    - It propagates the `MARKER` to all its outgoing neighbors.
-- **Handling Duplicate Markers:**
-  - If a process has already recorded its state and receives another `MARKER` from a different channel:
-    - It stops recording messages on that specific channel.
-    - The messages received on that channel *after* the state recording but *before* this duplicate marker are saved as the "Channel State."
+```text
+...
+[Server] Received snapshot from A
+[Server] Received snapshot from B
+[Server] Received snapshot from C
+[Server] All reports received. Building Wait-For Graph...
+[WFG] Edge A -> B (Process State)
+[WFG] Edge B -> C (Process State)
+[WFG] Edge C -> A (Process State)
+DEADLOCK DETECTED: Cycle found: [A B C] -> A
+```

@@ -15,6 +15,7 @@ type Process struct {
 	Outbound   map[string]chan<- Message
 	inbox      chan Message
 	WaitingFor map[string]bool
+	server     *SnapshotServer
 
 	// Snapshot state
 	RecordedResources  map[int]*ResourceLock
@@ -26,7 +27,7 @@ type Process struct {
 	RecordedChannelMessages map[string][]Message
 }
 
-func NewProcess(id string, resources []int) *Process {
+func NewProcess(id string, resources []int, server *SnapshotServer) *Process {
 	owned := make(map[int]*ResourceLock, len(resources))
 	for _, r := range resources {
 		owned[r] = &ResourceLock{
@@ -43,6 +44,7 @@ func NewProcess(id string, resources []int) *Process {
 		WaitingFor:              make(map[string]bool),
 		MarkerReceived:          make(map[string]bool),
 		RecordedChannelMessages: make(map[string][]Message),
+		server:                  server,
 	}
 }
 
@@ -174,6 +176,18 @@ func (p *Process) handleMarker(msg Message) {
 		p.RecordState()
 	}
 	p.MarkerReceived[msg.From] = true
+
+	// Check for completion
+	if len(p.MarkerReceived) == len(p.Inbound) {
+		report := SnapshotReport{
+			ProcessID:               p.ID,
+			RecordedResources:       p.RecordedResources,
+			RecordedWaitingFor:      p.RecordedWaitingFor,
+			RecordedChannelMessages: p.RecordedChannelMessages,
+		}
+		// Send report asynchronously to avoid blocking the process loop
+		go p.server.Collect(report)
+	}
 }
 
 func (p *Process) RecordState() {
