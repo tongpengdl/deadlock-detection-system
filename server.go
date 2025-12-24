@@ -69,27 +69,26 @@ func (s *SnapshotServer) DetectDeadlock() {
 	}
 
 	// 2. Cycle Detection (DFS)
-	visited := make(map[string]bool)
-	recStack := make(map[string]bool)
+	// 0: Not visited, 1, being visiting in the current path, 2: visited
+	visited := make(map[string]int)
 	hasDeadlock := false
 
 	// Helper function for DFS
 	var dfs func(u string, path []string)
 	dfs = func(u string, path []string) {
-		visited[u] = true
-		recStack[u] = true
+		visited[u] = 1
 		path = append(path, u)
 
 		for _, v := range adj[u] {
-			if !visited[v] {
+			if visited[v] == 0 {
 				dfs(v, path)
-			} else if recStack[v] {
+			} else if visited[v] == 1 {
 				// Cycle detected
 				hasDeadlock = true
 				fmt.Printf("DEADLOCK DETECTED: Cycle found: %v -> %s\n", path, v)
 			}
 		}
-		recStack[u] = false
+		visited[u] = 2
 	}
 
 	// Keys should be sorted for deterministic iteration order (good for testing/logs)
@@ -100,7 +99,7 @@ func (s *SnapshotServer) DetectDeadlock() {
 	sort.Strings(keys)
 
 	for _, u := range keys {
-		if !visited[u] {
+		if visited[u] == 0 {
 			dfs(u, []string{})
 		}
 	}
